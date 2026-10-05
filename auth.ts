@@ -9,14 +9,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             issuer: process.env.AUTH_KEYCLOAK_ISSUER,
         }),
     ],
+    pages: {
+        signIn: "/login",
+    },
     callbacks: {
-        authorized: async ({ auth }) => {
-            // Devuelve true si hay sesión; false redirige al login de Keycloak.
-            return !!auth
-        },
-        async jwt({ token, profile }) {
+        authorized: async ({ auth }) => !!auth,
+        async jwt({ token, profile, account }) {
+            if (account?.id_token) {
+                token.idToken = account.id_token
+            }
             if (profile) {
-                // Guardamos el nombre que envía Keycloak en el token.
                 token.name = profile.name
             }
             return token
@@ -26,6 +28,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                 session.user.name = token.name as string
             }
             return session
+        },
+    },
+    events: {
+        async signOut(message) {
+            if ("token" in message && message.token?.idToken) {
+                const issuer = process.env.AUTH_KEYCLOAK_ISSUER
+                const params = new URLSearchParams({
+                    id_token_hint: message.token.idToken as string,
+                })
+                await fetch(`${issuer}/protocol/openid-connect/logout?${params}`)
+            }
         },
     },
 })
